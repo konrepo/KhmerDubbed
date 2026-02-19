@@ -5,6 +5,9 @@ const ROOT = "https://www.khmeravenue.com/";
 const ALBUM = "https://www.khmeravenue.com/album/";
 const ITEMS_PER_PAGE = 24;
 
+// IMPORTANT: change this if you deploy under a different domain
+const BASE_URL = "https://khmer-dubbed.vercel.app";
+
 // ---------- tiny TTL cache ----------
 function nowMs() { return Date.now(); }
 class TTLCache {
@@ -52,6 +55,12 @@ function htmlEntityDecode(s) {
     .replace(/&amp;/g, "&").replace(/&#038;/g, "&")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+
+// Proxy poster/images through our addon to bypass hotlink protection
+function proxifyImage(url) {
+  if (!url) return undefined;
+  return `${BASE_URL}/img/${b64encode(url)}`;
 }
 
 async function fetchHTML(url) {
@@ -103,11 +112,17 @@ async function getCatalog({ search, skip }) {
     }
     if (!link || !title) return;
 
+    link = absUrl(link, ROOT);
+    poster = absUrl(poster, ROOT); // in case it's relative or protocol-relative
+
+    const posterProxy = proxifyImage(poster);
+
     metas.push({
       id: `khmerave:show:${b64encode(link)}`,
       type: "series",
       name: title,
-      poster: poster || undefined,
+      poster: posterProxy,
+      background: posterProxy,
       posterShape: "poster"
     });
   });
@@ -136,10 +151,12 @@ async function getMeta(id) {
   const $ = cheerio.load(html);
 
   const title = safeText($("h1").first().text()) || safeText($("title").text()) || "KhmerAve";
-  const poster =
+  const posterRaw =
     $("meta[property='og:image']").attr("content") ||
     $("meta[name='twitter:image']").attr("content") ||
     undefined;
+
+  const poster = proxifyImage(absUrl(posterRaw, ROOT));
 
   const eps = [];
   const seen = new Set();
@@ -319,7 +336,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
   return { streams: await getStreams(id) };
 });
 
-// vercel entry (fast manifest + safe handler)
+// vercel entry (fast manifest + safe handler + image proxy)
 module.exports = async (req, res) => {
   try {
     const url = req.url || "";
@@ -331,6 +348,30 @@ module.exports = async (req, res) => {
       res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
       res.setHeader("access-control-allow-headers", "*");
       res.end();
+      return;
+    }
+
+    // Image proxy for posters (bypass hotlink protection)
+    if (url.startsWith("/img/")) {
+      const b64 = url.split("/img/")[1] || "";
+      const target = b64decode(b64);
+
+      const r = await fetch(target, {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Referer": ROOT
+        }
+      });
+
+      res.statusCode = r.status;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("cache-control", "public, max-age=86400");
+
+      const ct = r.headers.get("content-type") || "image/jpeg";
+      res.setHeader("content-type", ct);
+
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.end(buf);
       return;
     }
 
@@ -355,4 +396,3 @@ module.exports = async (req, res) => {
     res.end("Internal Server Error");
   }
 };
-
