@@ -1,6 +1,8 @@
 {
   "functions": {
-    "api/index.js": { "runtime": "nodejs20.x" }
+    "api/index.js": {
+      "runtime": "vercel-nodejs@4"
+    }
   },
   "routes": [
     { "src": "/(.*)", "dest": "/api/index.js" }
