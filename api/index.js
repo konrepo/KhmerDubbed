@@ -6,7 +6,10 @@ const ALBUM = "https://www.khmeravenue.com/album/";
 const ITEMS_PER_PAGE = 24;
 
 // IMPORTANT: change this if you deploy under a different domain
-const BASE_URL = "https://khmer-dubbed.vercel.app";
+const BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://khmer-dubbed.vercel.app");
+
 
 // ---------- tiny TTL cache ----------
 function nowMs() { return Date.now(); }
