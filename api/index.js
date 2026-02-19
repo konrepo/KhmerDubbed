@@ -324,21 +324,35 @@ module.exports = async (req, res) => {
   try {
     const url = req.url || "";
 
-    // Fast path for manifest (prevents Stremio hanging)
+    // Handle CORS preflight
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
+      res.setHeader("access-control-allow-headers", "*");
+      res.end();
+      return;
+    }
+
+    // Fast path for manifest (important for Stremio)
     if (url.startsWith("/manifest.json")) {
+      res.statusCode = 200;
       res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-headers", "*");
+      res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(manifest));
       return;
     }
 
-    // All other routes handled by SDK
+    // Let SDK handle everything else
     await serveHTTP(builder.getInterface(), { req, res });
 
   } catch (err) {
     console.error("KhmerDubbed handler error:", err && (err.stack || err.message || err));
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain; charset=utf-8");
-    res.end("Internal Server Error (see function logs).");
+    res.end("Internal Server Error");
   }
 };
 
