@@ -321,9 +321,3 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
 // vercel entry
 export default (req, res) => serveHTTP(builder.getInterface(), { req, res });
-
-// local dev (optional)
-if (process.env.NODE_ENV !== "production") {
-  serveHTTP(builder.getInterface(), { port: 7000 });
-  console.log("http://localhost:7000/manifest.json");
-}
