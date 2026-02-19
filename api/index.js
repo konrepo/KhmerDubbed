@@ -319,5 +319,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
   return { streams: await getStreams(id) };
 });
 
-// vercel entry
-export default (req, res) => serveHTTP(builder.getInterface(), { req, res });
+// vercel entry (with error logging)
+export default async (req, res) => {
+  try {
+    await serveHTTP(builder.getInterface(), { req, res });
+  } catch (err) {
+    console.error("KhmerDubbed handler error:", err && (err.stack || err.message || err));
+    res.statusCode = 500;
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.end("Internal Server Error (see function logs).");
+  }
+};
+
