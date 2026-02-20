@@ -1,11 +1,11 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
-const cheerio = require("cheerio");
+import { addonBuilder, serveHTTP } from "stremio-addon-sdk";
+import cheerio from "cheerio";
+import axios from "axios";
 
 const ROOT = "https://www.khmeravenue.com/";
 const ALBUM = "https://www.khmeravenue.com/album/";
 const ITEMS_PER_PAGE = 24;
 
-// Base URL for image proxy links
 const BASE_URL =
   process.env.PUBLIC_BASE_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://khmer-dubbed.vercel.app");
@@ -20,7 +20,7 @@ class TTLCache {
     const hit = this.map.get(key);
     if (!hit) return undefined;
     if (hit.exp < nowMs()) { this.map.delete(key); return undefined; }
-    this.map.delete(key); this.map.set(key, hit); // LRU bump
+    this.map.delete(key); this.map.set(key, hit);
     return hit.val;
   }
   set(key, val, ttlMsOverride) {
@@ -30,6 +30,7 @@ class TTLCache {
     while (this.map.size > this.max) this.map.delete(this.map.keys().next().value);
   }
 }
+
 const htmlCache = new TTLCache({ max: 250, ttlMs: 8 * 60 * 1000 });
 const metaCache = new TTLCache({ max: 250, ttlMs: 30 * 60 * 1000 });
 const streamsCache = new TTLCache({ max: 400, ttlMs: 15 * 60 * 1000 });
@@ -63,36 +64,27 @@ function proxifyImage(url) {
   return `${BASE_URL}/img/${b64encode(url)}`;
 }
 
-// ---------- fetch with timeout ----------
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(t);
+// ---------- axios client ----------
+const http = axios.create({
+  timeout: 12000,
+  maxRedirects: 5,
+  headers: {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": ROOT,
+    "Accept": "text/html,application/xhtml+xml"
   }
-}
+});
 
 async function fetchHTML(url) {
-  if (negativeCache.get(url)) throw new Error(`Temp blocked (recent fail): ${url}`);
+  if (negativeCache.get(url)) throw new Error(`Temp blocked: ${url}`);
+
   const cached = htmlCache.get(url);
   if (cached) return cached;
 
-  const res = await fetchWithTimeout(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Referer": ROOT,
-      "Accept": "text/html,application/xhtml+xml"
-    },
-    redirect: "follow"
-  }, 12000);
-
-  if (!res.ok) { negativeCache.set(url, true); throw new Error(`Fetch ${res.status}`); }
-
-  const text = await res.text();
-  htmlCache.set(url, text);
-  return text;
+  const { data } = await http.get(url);
+  const html = typeof data === "string" ? data : String(data);
+  htmlCache.set(url, html);
+  return html;
 }
 
 // ---------- pagination ----------
@@ -109,10 +101,12 @@ function buildCatalogUrl({ search, page }) {
 async function getCatalog({ search, skip }) {
   const page = skipToPage(skip);
   const url = buildCatalogUrl({ search: safeText(search), page });
+
   const html = await fetchHTML(url);
   const $ = cheerio.load(html);
 
   const metas = [];
+
   $("div.col-6.col-sm-4.thumbnail-container, div.card-content").each((_, el) => {
     const item = $(el);
     const isThumb = item.hasClass("thumbnail-container");
@@ -127,6 +121,7 @@ async function getCatalog({ search, skip }) {
       title = safeText(item.find("h3").first().text());
       poster = extractStyleURL(item.find("div.card-content-image").first().attr("style"));
     }
+
     if (!link || !title) return;
 
     link = absUrl(link, ROOT);
@@ -181,6 +176,7 @@ async function getMeta(id) {
   $("table#latest-videos a[href], div.col-xs-6.col-sm-6.col-md-3 a[href]").each((_, a) => {
     const href = $(a).attr("href");
     if (!href) return;
+
     const abs = absUrl(href, showUrl);
     if (!abs || seen.has(abs)) return;
     seen.add(abs);
@@ -213,7 +209,7 @@ async function getMeta(id) {
   return meta;
 }
 
-// ---------- stream resolver (Kodi-like) ----------
+// ---------- stream resolver ----------
 const BLACKLIST = ["googletagmanager.com", "facebook.com", "twitter.com", "doubleclick.net"];
 function isBlacklisted(u) { const s = (u || "").toLowerCase(); return BLACKLIST.some(b => s.includes(b)); }
 function isLikelyVideo(u) {
@@ -241,6 +237,7 @@ function collectByRegex(html, patterns) {
   }
   return out;
 }
+
 async function resolveStreamsFromHtml(html, pageUrl) {
   const streams = [];
 
@@ -274,6 +271,7 @@ async function resolveStreamsFromHtml(html, pageUrl) {
     if (u && !isBlacklisted(u)) streams.push({ title: "KhmerDubbed", url: u });
   }
 
+  // dedup
   const seen = new Set();
   const unique = [];
   for (const s of streams) {
@@ -296,8 +294,8 @@ async function getStreams(id) {
   const follow = streams.map(s => s.url).filter(u => u && !isLikelyVideo(u)).slice(0, 2);
   for (const u of follow) {
     try {
-      const innerHtml = await fetchHTML(u);
-      streams = streams.concat(await resolveStreamsFromHtml(innerHtml, u));
+      const inner = await fetchHTML(u);
+      streams = streams.concat(await resolveStreamsFromHtml(inner, u));
     } catch {}
   }
 
@@ -324,24 +322,20 @@ const manifest = {
   resources: ["catalog", "meta", "stream"],
   types: ["series"],
   catalogs: [
-    {
-      type: "series",
-      id: "khmerave-series",
-      name: "KhmerAve",
-      extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }]
-    }
+    { type: "series", id: "khmerave-series", name: "KhmerAve",
+      extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }] }
   ]
 };
 
 const builder = new addonBuilder(manifest);
 
-// IMPORTANT: never hang — return empty on errors
+// never hang: always respond
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
   try {
     if (type !== "series" || id !== "khmerave-series") return { metas: [] };
     return { metas: await getCatalog({ search: extra?.search || "", skip: extra?.skip || 0 }) };
   } catch (e) {
-    console.error("Catalog error:", e && (e.stack || e.message || e));
+    console.error("Catalog error:", e?.stack || e?.message || e);
     return { metas: [] };
   }
 });
@@ -351,7 +345,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
     if (type !== "series" || !id.startsWith("khmerave:show:")) return { meta: null };
     return { meta: await getMeta(id) };
   } catch (e) {
-    console.error("Meta error:", e && (e.stack || e.message || e));
+    console.error("Meta error:", e?.stack || e?.message || e);
     return { meta: null };
   }
 });
@@ -361,17 +355,17 @@ builder.defineStreamHandler(async ({ type, id }) => {
     if (type !== "series" || !id.startsWith("khmerave:ep:")) return { streams: [] };
     return { streams: await getStreams(id) };
   } catch (e) {
-    console.error("Stream error:", e && (e.stack || e.message || e));
+    console.error("Stream error:", e?.stack || e?.message || e);
     return { streams: [] };
   }
 });
 
-// vercel entry (fast manifest + safe handler + image proxy)
-module.exports = async (req, res) => {
+// ---------- vercel handler ----------
+export default async function handler(req, res) {
   try {
     const url = req.url || "";
 
-    // CORS preflight
+    // CORS
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
       res.setHeader("access-control-allow-origin", "*");
@@ -381,47 +375,44 @@ module.exports = async (req, res) => {
       return;
     }
 
-    // Image proxy (with timeout)
+    // image proxy
     if (url.startsWith("/img/")) {
       const b64 = url.split("/img/")[1] || "";
       const target = b64decode(b64);
 
-      const r = await fetchWithTimeout(target, {
+      const r = await axios.get(target, {
+        responseType: "arraybuffer",
+        timeout: 12000,
         headers: {
           "User-Agent": "Mozilla/5.0",
           "Referer": ROOT,
           "Accept": "image/avif,image/webp,image/apng,image/*,*/*"
-        },
-        redirect: "follow"
-      }, 12000);
+        }
+      });
 
-      res.statusCode = r.status;
+      res.statusCode = 200;
       res.setHeader("access-control-allow-origin", "*");
       res.setHeader("cache-control", "public, max-age=86400");
-      res.setHeader("content-type", r.headers.get("content-type") || "image/jpeg");
-
-      const buf = Buffer.from(await r.arrayBuffer());
-      res.end(buf);
+      res.setHeader("content-type", r.headers["content-type"] || "image/jpeg");
+      res.end(Buffer.from(r.data));
       return;
     }
 
-    // Fast manifest
+    // fast manifest
     if (url.startsWith("/manifest.json")) {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json; charset=utf-8");
       res.setHeader("access-control-allow-origin", "*");
-      res.setHeader("access-control-allow-headers", "*");
       res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(manifest));
       return;
     }
 
     await serveHTTP(builder.getInterface(), { req, res });
-
   } catch (err) {
-    console.error("KhmerDubbed handler error:", err && (err.stack || err.message || err));
+    console.error("KhmerDubbed handler error:", err?.stack || err?.message || err);
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain; charset=utf-8");
     res.end("Internal Server Error");
   }
-};
+}
