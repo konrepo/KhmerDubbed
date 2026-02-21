@@ -44,6 +44,7 @@ builder.defineCatalogHandler(() => ({
 module.exports = (req, res) => {
   const url = req.url || "";
 
+  // Ignore favicon
   if (url === "/favicon.ico") {
     res.statusCode = 204;
     res.end();
