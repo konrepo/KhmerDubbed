@@ -46,36 +46,13 @@ builder.defineCatalogHandler(() => ({
 export default function handler(req, res) {
   const url = req.url || "";
 
+  // Ignore favicon
   if (url === "/favicon.ico") {
     res.statusCode = 204;
     res.end();
     return;
   }
 
-  if (url === "/" || url === "") {
-    res.statusCode = 200;
-    res.setHeader("content-type", "text/plain");
-    res.end("KhmerDubbed Stremio Addon");
-    return;
-  }
-
-  if (url.startsWith("/manifest.json")) {
-    res.statusCode = 200;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("access-control-allow-origin", "*");
-    res.end(JSON.stringify(manifest));
-    return;
-  }
-
-  if (
-    url.startsWith("/catalog") ||
-    url.startsWith("/meta") ||
-    url.startsWith("/stream")
-  ) {
-    serveHTTP(builder.getInterface(), { req, res });
-    return;
-  }
-
-  res.statusCode = 404;
-  res.end("Not Found");
+  // Let SDK handle EVERYTHING else
+  serveHTTP(builder.getInterface(), { req, res });
 }
