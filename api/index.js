@@ -54,11 +54,11 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       ? `${ROOT}?s=${encodeURIComponent(extra.search)}&post_type=album`
       : `${ALBUM}page/${page}/`;
 
-    // Add manual timeout wrapper
+    // HARD TIMEOUT (10 seconds max)
     const response = await Promise.race([
       http.get(url),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timeout")), 10000)
+        setTimeout(() => reject(new Error("KhmerAve timeout")), 10000)
       )
     ]);
 
@@ -69,25 +69,15 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
 
     $("div.col-6.col-sm-4.thumbnail-container, div.card-content").each((_, el) => {
       const item = $(el);
-
       const a = item.find("a[href]").first();
       const title = item.find("h3").first().text().trim();
-
-      let poster = "";
-      const style = item.find("[style*='background-image']").attr("style");
-      if (style) {
-        const m = style.match(/url\((.*?)\)/i);
-        if (m) poster = m[1].replace(/^['"]|['"]$/g, "");
-      }
-
       const link = a.attr("href");
 
       if (title && link) {
         metas.push({
           id: `khmerave:${Buffer.from(link).toString("base64")}`,
           type: "series",
-          name: title,
-          poster: poster || undefined
+          name: title
         });
       }
     });
@@ -95,8 +85,8 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
     return { metas };
 
   } catch (err) {
-    console.error("Catalog failed safely:", err.message);
-    return { metas: [] };  // NEVER hang
+    console.error("KhmerAve blocked or timed out:", err.message);
+    return { metas: [] };   // NEVER hang
   }
 });
 
