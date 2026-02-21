@@ -95,11 +95,11 @@ async function getCatalog({ search, skip }) {
     if (isThumb) {
       link = item.find("a").first().attr("href") || "";
       title = safeText(item.find("h3").first().text());
-      poster = extractStyleURL(item.find("div[style]").first().attr("style"));
+      poster = extractStyleURL(item.find("div[style]").first().attr("style"), ROOT);
     } else {
       link = item.find("a[href]").first().attr("href") || "";
       title = safeText(item.find("h3").first().text());
-      poster = extractStyleURL(item.find("div.card-content-image").first().attr("style"));
+      poster = extractStyleURL(item.find("div.card-content-image").first().attr("style"), ROOT);
     }
     if (!link || !title) return;
 
