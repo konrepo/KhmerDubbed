@@ -1,12 +1,8 @@
+import { addonBuilder, serveHTTP } from "stremio-addon-sdk";
+
 export const config = {
   runtime: "nodejs"
 };
-
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
-
-// ------------------
-// Manifest
-// ------------------
 
 const manifest = {
   id: "community.khmerdubbed",
@@ -16,23 +12,11 @@ const manifest = {
   resources: ["catalog"],
   types: ["series"],
   catalogs: [
-    {
-      type: "series",
-      id: "khmerave-series",
-      name: "KhmerAve"
-    }
+    { type: "series", id: "khmerave-series", name: "KhmerAve" }
   ]
 };
 
-// ------------------
-// Builder
-// ------------------
-
 const builder = new addonBuilder(manifest);
-
-// ------------------
-// Simple Test Catalog
-// ------------------
 
 builder.defineCatalogHandler(() => ({
   metas: [
@@ -41,19 +25,6 @@ builder.defineCatalogHandler(() => ({
   ]
 }));
 
-// ------------------
-// Vercel Handler
-// ------------------
-
-module.exports = (req, res) => {
-  const url = req.url || "";
-
-  // Ignore favicon
-  if (url === "/favicon.ico") {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
-
+export default function handler(req, res) {
   serveHTTP(builder.getInterface(), { req, res });
-};
+}
