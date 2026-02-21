@@ -1,9 +1,7 @@
 {
   "name": "khmerdubbed",
   "version": "1.0.0",
-  "engines": {
-    "node": "22.x"
-  },
+  "type": "module",
   "dependencies": {
     "stremio-addon-sdk": "1.6.10"
   }
