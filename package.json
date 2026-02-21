@@ -1,8 +1,9 @@
 {
-  "name": "khmerdubbed",
+  "name": "khmeravenue-stremio-addon",
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "stremio-addon-sdk": "1.6.10"
+    "stremio-addon-sdk": "^1.6.10",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
