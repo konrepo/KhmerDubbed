@@ -43,51 +43,24 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-builder.defineCatalogHandler(async ({ type, id, extra }) => {
-  try {
-    if (type !== "series" || id !== "khmerave-series")
-      return { metas: [] };
+builder.defineCatalogHandler(async ({ type, id }) => {
+  if (type !== "series" || id !== "khmerave-series")
+    return { metas: [] };
 
-    const page = Math.floor((Number(extra?.skip || 0)) / 24) + 1;
-
-    const url = extra?.search
-      ? `${ROOT}?s=${encodeURIComponent(extra.search)}&post_type=album`
-      : `${ALBUM}page/${page}/`;
-
-    // HARD TIMEOUT (10 seconds max)
-    const response = await Promise.race([
-      http.get(url),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("KhmerAve timeout")), 10000)
-      )
-    ]);
-
-    const { data } = response;
-    const $ = cheerio.load(data);
-
-    const metas = [];
-
-    $("div.col-6.col-sm-4.thumbnail-container, div.card-content").each((_, el) => {
-      const item = $(el);
-      const a = item.find("a[href]").first();
-      const title = item.find("h3").first().text().trim();
-      const link = a.attr("href");
-
-      if (title && link) {
-        metas.push({
-          id: `khmerave:${Buffer.from(link).toString("base64")}`,
-          type: "series",
-          name: title
-        });
+  return {
+    metas: [
+      {
+        id: "test1",
+        type: "series",
+        name: "Test Drama 1"
+      },
+      {
+        id: "test2",
+        type: "series",
+        name: "Test Drama 2"
       }
-    });
-
-    return { metas };
-
-  } catch (err) {
-    console.error("KhmerAve blocked or timed out:", err.message);
-    return { metas: [] };   // NEVER hang
-  }
+    ]
+  };
 });
 
 export default async function handler(req, res) {
