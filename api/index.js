@@ -319,10 +319,21 @@ builder.defineStreamHandler(async ({ type, id }) => {
   return { streams: await getStreams(id) };
 });
 
-// vercel entry (with error logging)
+// vercel entry (fast manifest + safe handler)
 module.exports = async (req, res) => {
   try {
+    const url = req.url || "";
+
+    // 🔥 Fast path for manifest (prevents Stremio hanging)
+    if (url.startsWith("/manifest.json")) {
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.end(JSON.stringify(manifest));
+      return;
+    }
+
+    // All other routes handled by SDK
     await serveHTTP(builder.getInterface(), { req, res });
+
   } catch (err) {
     console.error("KhmerDubbed handler error:", err && (err.stack || err.message || err));
     res.statusCode = 500;
