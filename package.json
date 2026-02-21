@@ -1,13 +1,10 @@
 {
   "name": "khmerdubbed",
   "version": "1.0.0",
-  "type": "module",
   "engines": {
     "node": "22.x"
   },
   "dependencies": {
-    "stremio-addon-sdk": "1.6.10",
-    "axios": "^1.6.0",
-    "cheerio": "^1.2.0"
+    "stremio-addon-sdk": "1.6.10"
   }
 }
