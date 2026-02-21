@@ -54,7 +54,15 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
       ? `${ROOT}?s=${encodeURIComponent(extra.search)}&post_type=album`
       : `${ALBUM}page/${page}/`;
 
-    const { data } = await http.get(url);
+    // Add manual timeout wrapper
+    const response = await Promise.race([
+      http.get(url),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Request timeout")), 10000)
+      )
+    ]);
+
+    const { data } = response;
     const $ = cheerio.load(data);
 
     const metas = [];
@@ -87,8 +95,8 @@ builder.defineCatalogHandler(async ({ type, id, extra }) => {
     return { metas };
 
   } catch (err) {
-    console.error("Catalog error:", err?.message || err);
-    return { metas: [] };
+    console.error("Catalog failed safely:", err.message);
+    return { metas: [] };  // NEVER hang
   }
 });
 
