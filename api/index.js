@@ -1,3 +1,7 @@
+export const config = {
+  runtime: "nodejs"
+};
+
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
 // ------------------
