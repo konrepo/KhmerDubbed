@@ -1,6 +1,4 @@
-import sdk from "stremio-addon-sdk";
-
-const { addonBuilder, serveHTTP } = sdk;
+const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
 // ------------------
 // Manifest
@@ -43,16 +41,14 @@ builder.defineCatalogHandler(() => ({
 // Vercel Handler
 // ------------------
 
-export default function handler(req, res) {
+module.exports = (req, res) => {
   const url = req.url || "";
 
-  // Ignore favicon
   if (url === "/favicon.ico") {
     res.statusCode = 204;
     res.end();
     return;
   }
 
-  // Let SDK handle EVERYTHING else
   serveHTTP(builder.getInterface(), { req, res });
-}
+};
