@@ -5,11 +5,6 @@ const ROOT = "https://www.khmeravenue.com/";
 const ALBUM = "https://www.khmeravenue.com/album/";
 const ITEMS_PER_PAGE = 24;
 
-// Base URL for image proxy links
-const BASE_URL =
-  process.env.PUBLIC_BASE_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://khmer-dubbed.vercel.app");
-
 // ---------- tiny TTL cache ----------
 function nowMs() { return Date.now(); }
 class TTLCache {
@@ -20,7 +15,7 @@ class TTLCache {
     const hit = this.map.get(key);
     if (!hit) return undefined;
     if (hit.exp < nowMs()) { this.map.delete(key); return undefined; }
-    this.map.delete(key); this.map.set(key, hit); // LRU bump
+    this.map.delete(key); this.map.set(key, hit);
     return hit.val;
   }
   set(key, val, ttlMsOverride) {
@@ -41,7 +36,7 @@ function b64encode(str) {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 function b64decode(str) {
-  str = (str || "").replace(/-/g, "+").replace(/_/g, "/");
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
   while (str.length % 4) str += "=";
   return Buffer.from(str, "base64").toString("utf8");
 }
@@ -58,38 +53,17 @@ function htmlEntityDecode(s) {
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 }
-function proxifyImage(url) {
-  if (!url) return undefined;
-  return `${BASE_URL}/img/${b64encode(url)}`;
-}
-
-// ---------- fetch with timeout ----------
-async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(t);
-  }
-}
 
 async function fetchHTML(url) {
   if (negativeCache.get(url)) throw new Error(`Temp blocked (recent fail): ${url}`);
   const cached = htmlCache.get(url);
   if (cached) return cached;
 
-  const res = await fetchWithTimeout(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Referer": ROOT,
-      "Accept": "text/html,application/xhtml+xml"
-    },
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0", "Referer": ROOT },
     redirect: "follow"
-  }, 12000);
-
+  });
   if (!res.ok) { negativeCache.set(url, true); throw new Error(`Fetch ${res.status}`); }
-
   const text = await res.text();
   htmlCache.set(url, text);
   return text;
@@ -129,17 +103,11 @@ async function getCatalog({ search, skip }) {
     }
     if (!link || !title) return;
 
-    link = absUrl(link, ROOT);
-    poster = absUrl(poster, ROOT);
-
-    const posterProxy = proxifyImage(poster);
-
     metas.push({
       id: `khmerave:show:${b64encode(link)}`,
       type: "series",
       name: title,
-      poster: posterProxy,
-      background: posterProxy,
+      poster: poster || undefined,
       posterShape: "poster"
     });
   });
@@ -168,12 +136,10 @@ async function getMeta(id) {
   const $ = cheerio.load(html);
 
   const title = safeText($("h1").first().text()) || safeText($("title").text()) || "KhmerAve";
-  const posterRaw =
+  const poster =
     $("meta[property='og:image']").attr("content") ||
     $("meta[name='twitter:image']").attr("content") ||
     undefined;
-
-  const poster = proxifyImage(absUrl(posterRaw, ROOT));
 
   const eps = [];
   const seen = new Set();
@@ -274,6 +240,7 @@ async function resolveStreamsFromHtml(html, pageUrl) {
     if (u && !isBlacklisted(u)) streams.push({ title: "KhmerDubbed", url: u });
   }
 
+  // dedup
   const seen = new Set();
   const unique = [];
   for (const s of streams) {
@@ -293,6 +260,7 @@ async function getStreams(id) {
 
   let streams = await resolveStreamsFromHtml(html, epUrl);
 
+  // follow up to 2 embed pages (1 level)
   const follow = streams.map(s => s.url).filter(u => u && !isLikelyVideo(u)).slice(0, 2);
   for (const u of follow) {
     try {
@@ -301,6 +269,7 @@ async function getStreams(id) {
     } catch {}
   }
 
+  // final dedup + prefer direct video first
   const seen = new Set();
   const final = [];
   for (const s of streams) {
@@ -335,93 +304,40 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// IMPORTANT: never hang — return empty on errors
 builder.defineCatalogHandler(async ({ type, id, extra }) => {
-  try {
-    if (type !== "series" || id !== "khmerave-series") return { metas: [] };
-    return { metas: await getCatalog({ search: extra?.search || "", skip: extra?.skip || 0 }) };
-  } catch (e) {
-    console.error("Catalog error:", e && (e.stack || e.message || e));
-    return { metas: [] };
-  }
+  if (type !== "series" || id !== "khmerave-series") return { metas: [] };
+  return { metas: await getCatalog({ search: extra?.search || "", skip: extra?.skip || 0 }) };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  try {
-    if (type !== "series" || !id.startsWith("khmerave:show:")) return { meta: null };
-    return { meta: await getMeta(id) };
-  } catch (e) {
-    console.error("Meta error:", e && (e.stack || e.message || e));
-    return { meta: null };
-  }
+  if (type !== "series" || !id.startsWith("khmerave:show:")) return { meta: null };
+  return { meta: await getMeta(id) };
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  try {
-    if (type !== "series" || !id.startsWith("khmerave:ep:")) return { streams: [] };
-    return { streams: await getStreams(id) };
-  } catch (e) {
-    console.error("Stream error:", e && (e.stack || e.message || e));
-    return { streams: [] };
-  }
+  if (type !== "series" || !id.startsWith("khmerave:ep:")) return { streams: [] };
+  return { streams: await getStreams(id) };
 });
 
-// vercel entry (fast manifest + safe handler + image proxy)
+// vercel entry (fast manifest + safe handler)
 module.exports = async (req, res) => {
   try {
     const url = req.url || "";
 
-    // CORS preflight
-    if (req.method === "OPTIONS") {
-      res.statusCode = 204;
-      res.setHeader("access-control-allow-origin", "*");
-      res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
-      res.setHeader("access-control-allow-headers", "*");
-      res.end();
-      return;
-    }
-
-    // Image proxy (with timeout)
-    if (url.startsWith("/img/")) {
-      const b64 = url.split("/img/")[1] || "";
-      const target = b64decode(b64);
-
-      const r = await fetchWithTimeout(target, {
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Referer": ROOT,
-          "Accept": "image/avif,image/webp,image/apng,image/*,*/*"
-        },
-        redirect: "follow"
-      }, 12000);
-
-      res.statusCode = r.status;
-      res.setHeader("access-control-allow-origin", "*");
-      res.setHeader("cache-control", "public, max-age=86400");
-      res.setHeader("content-type", r.headers.get("content-type") || "image/jpeg");
-
-      const buf = Buffer.from(await r.arrayBuffer());
-      res.end(buf);
-      return;
-    }
-
-    // Fast manifest
+    // 🔥 Fast path for manifest (prevents Stremio hanging)
     if (url.startsWith("/manifest.json")) {
-      res.statusCode = 200;
       res.setHeader("content-type", "application/json; charset=utf-8");
-      res.setHeader("access-control-allow-origin", "*");
-      res.setHeader("access-control-allow-headers", "*");
-      res.setHeader("cache-control", "no-store");
       res.end(JSON.stringify(manifest));
       return;
     }
 
+    // All other routes handled by SDK
     await serveHTTP(builder.getInterface(), { req, res });
 
   } catch (err) {
     console.error("KhmerDubbed handler error:", err && (err.stack || err.message || err));
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain; charset=utf-8");
-    res.end("Internal Server Error");
+    res.end("Internal Server Error (see function logs).");
   }
 };
