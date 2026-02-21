@@ -1,6 +1,70 @@
-import { addonBuilder, serveHTTP } from "stremio-addon-sdk";
-import cheerio from "cheerio";
+import sdk from "stremio-addon-sdk";
 import axios from "axios";
+import * as cheerio from "cheerio";
+
+const { addonBuilder, serveHTTP } = sdk;
+
+const manifest = {
+  id: "community.khmerdubbed",
+  version: "1.1.0",
+  name: "KhmerDubbed",
+  description: "KhmerDubbed – KhmerAve (prototype).",
+  resources: ["catalog", "meta", "stream"],
+  types: ["series"],
+  catalogs: [
+    { type: "series", id: "khmerave-series", name: "KhmerAve",
+      extra: [{ name: "search", isRequired: false }, { name: "skip", isRequired: false }] }
+  ]
+};
+
+const builder = new addonBuilder(manifest);
+
+// super simple handlers (no scraping yet) to prove runtime is stable
+builder.defineCatalogHandler(async () => ({ metas: [] }));
+builder.defineMetaHandler(async () => ({ meta: null }));
+builder.defineStreamHandler(async () => ({ streams: [] }));
+
+export default async function handler(req, res) {
+  try {
+    const url = req.url || "";
+
+    // CORS
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-methods", "GET,HEAD,OPTIONS");
+      res.setHeader("access-control-allow-headers", "*");
+      res.end();
+      return;
+    }
+
+    // health check
+    if (url.startsWith("/health")) {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("access-control-allow-origin", "*");
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // fast manifest
+    if (url.startsWith("/manifest.json")) {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("cache-control", "no-store");
+      res.end(JSON.stringify(manifest));
+      return;
+    }
+
+    await serveHTTP(builder.getInterface(), { req, res });
+  } catch (err) {
+    console.error("Handler error:", err?.stack || err?.message || err);
+    res.statusCode = 500;
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.end("Internal Server Error");
+  }
+}
 
 const ROOT = "https://www.khmeravenue.com/";
 const ALBUM = "https://www.khmeravenue.com/album/";
