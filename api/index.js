@@ -96,10 +96,12 @@ async function getCatalog({ search, skip }) {
       link = item.find("a").first().attr("href") || "";
       title = safeText(item.find("h3").first().text());
       poster = extractStyleURL(item.find("div[style]").first().attr("style"), ROOT);
+      link = absUrl(link, ROOT);
     } else {
       link = item.find("a[href]").first().attr("href") || "";
       title = safeText(item.find("h3").first().text());
       poster = extractStyleURL(item.find("div.card-content-image").first().attr("style"), ROOT);
+      link = absUrl(link, ROOT);
     }
     if (!link || !title) return;
 
